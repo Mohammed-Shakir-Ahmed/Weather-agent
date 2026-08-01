@@ -1,9 +1,14 @@
+require("dotenv").config();
+
 const http = require("node:http");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, "public");
+const AI_API_KEY = process.env.AI_API_KEY;
+const AI_MODEL = process.env.AI_MODEL || "meta-llama/llama-3.1-8b-instruct:free";
+const AI_BASE_URL = process.env.AI_BASE_URL || "https://openrouter.ai/api/v1/chat/completions";
 
 const WEATHER_CODES = {
   0: "Clear sky",
@@ -107,7 +112,99 @@ async function getWeather(latitude, longitude, timezone) {
   return response.json();
 }
 
-function buildAgentResponse(location, weather) {
+async function getAiContent(location, weather) {
+  if (!AI_API_KEY) {
+    throw new Error("AI API key is not configured.");
+  }
+
+  const current = weather.current;
+  const place = [
+    location.name,
+    location.admin1,
+    location.country
+  ].filter(Boolean).join(", ");
+  const weatherCondition = WEATHER_CODES[current.weather_code] || "Unknown";
+
+  const prompt = [
+    "You are a concise weather assistant.",
+    `Create a helpful weather response for ${place}.`,
+    `Current details: ${weatherCondition.toLowerCase()}, ${current.temperature_2m}°C, feels like ${current.apparent_temperature}°C, humidity ${current.relative_humidity_2m}%, wind ${current.wind_speed_10m} km/h, precipitation ${current.precipitation} mm.`,
+    "Return valid JSON only with two keys: summary and advice.",
+    "summary must be one short natural sentence.",
+    "advice must be an array of exactly three objects with title and advice fields."
+  ].join(" ");
+
+  const response = await fetch(AI_BASE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${AI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: AI_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: "You write short, friendly weather summaries and practical advice in JSON."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.7
+    })
+  });
+
+  if (!response.ok) {
+    let errorMessage = "The AI service could not generate content.";
+
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData?.error?.message || errorMessage;
+    } catch {
+      // Ignore JSON parsing errors and keep the default message.
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content?.trim();
+
+  if (!content) {
+    throw new Error("The AI service returned no content.");
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) {
+      throw new Error("The AI response format was invalid.");
+    }
+    parsed = JSON.parse(match[0]);
+  }
+
+  const summary = typeof parsed.summary === "string" ? parsed.summary.trim() : "";
+  const advice = Array.isArray(parsed.advice)
+    ? parsed.advice
+        .filter((item) => item && typeof item.title === "string" && typeof item.advice === "string")
+        .slice(0, 3)
+    : [];
+
+  if (!summary || advice.length < 3) {
+    throw new Error("The AI response was incomplete.");
+  }
+
+  return {
+    summary,
+    advice
+  };
+}
+
+async function buildAgentResponse(location, weather) {
   const current = weather.current;
   const daily = weather.daily;
 
@@ -125,11 +222,12 @@ function buildAgentResponse(location, weather) {
     precipitationChance: daily.precipitation_probability_max[index]
   }));
 
+  const weatherCondition = WEATHER_CODES[current.weather_code] || "Unknown";
+  const aiContent = await getAiContent(location, weather);
+
   return {
-    message:
-      `It is ${current.temperature_2m}°C in ${place} and feels like ` +
-      `${current.apparent_temperature}°C. Conditions are ` +
-      `${(WEATHER_CODES[current.weather_code] || "unknown").toLowerCase()}.`,
+    message: aiContent.summary,
+    summary: aiContent.summary,
     location: {
       name: place,
       latitude: location.latitude,
@@ -137,13 +235,14 @@ function buildAgentResponse(location, weather) {
       timezone: weather.timezone
     },
     current: {
-      condition: WEATHER_CODES[current.weather_code] || "Unknown",
+      condition: weatherCondition,
       temperature: current.temperature_2m,
       apparentTemperature: current.apparent_temperature,
       humidity: current.relative_humidity_2m,
       precipitation: current.precipitation,
       windSpeed: current.wind_speed_10m
     },
+    advice: aiContent.advice,
     forecast
   };
 }
@@ -173,7 +272,8 @@ async function handleWeatherRequest(request, response, url) {
       location.timezone
     );
 
-    sendJson(response, 200, buildAgentResponse(location, weather));
+    const agentResponse = await buildAgentResponse(location, weather);
+    sendJson(response, 200, agentResponse);
   } catch (error) {
     sendJson(response, 502, {
       error: error.message || "Unable to retrieve weather information."
