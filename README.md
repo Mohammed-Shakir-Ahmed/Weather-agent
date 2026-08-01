@@ -17,6 +17,7 @@ This app is compatible with free Node.js hosting platforms such as:
 - Render
 - Railway
 - Fly.io
+- Cloudflare Workers
 
 ### Recommended: Render
 1. Push this repository to GitHub.
