@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+  <title>Weather Agent</title>
+
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(135deg, #172554, #075985, #0f766e);
+    }
+
+    main {
+      width: min(720px, 100%);
+      padding: 28px;
+      border: 1px solid rgb(255 255 255 / 20%);
+      border-radius: 24px;
+      background: rgb(15 23 42 / 80%);
+      box-shadow: 0 24px 70px rgb(0 0 0 / 30%);
+      backdrop-filter: blur(15px);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    form {
+      display: flex;
+      gap: 10px;
+    }
+
+    input,
+    button {
+      min-height: 48px;
+      border: 0;
+      border-radius: 12px;
+      font: inherit;
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 0 16px;
+    }
+
+    button {
+      padding: 0 20px;
+      color: white;
+      background: #0284c7;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
+    }
+
+    #status {
+      min-height: 24px;
+      margin: 18px 0;
+    }
+
+    .current,
+    .day {
+      padding: 18px;
+      border-radius: 16px;
+      background: rgb(255 255 255 / 10%);
+    }
+
+    .current-grid,
+    .forecast {
+      display: grid;
+      gap: 12px;
+    }
+
+    .current-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .forecast {
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 16px;
+    }
+
+    .value {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+
+    .label {
+      color: #bae6fd;
+    }
+
+    .error {
+      color: #fecaca;
+    }
+
+    @media (max-width: 580px) {
+      form {
+        flex-direction: column;
+      }
+
+      .current-grid,
+      .forecast {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <h1>Weather Agent</h1>
+    <p>Enter a city to get current weather and a three-day forecast.</p>
+
+    <form id="weather-form">
+      <input
+        id="city"
+        name="city"
+        value="New Delhi"
+        placeholder="Enter a city"
+        autocomplete="address-level2"
+        required
+      >
+      <button id="submit-button" type="submit">Ask agent</button>
+    </form>
+
+    <p id="status" aria-live="polite"></p>
+    <section id="result"></section>
+  </main>
+
+  <script>
+    const form = document.querySelector("#weather-form");
+    const cityInput = document.querySelector("#city");
+    const button = document.querySelector("#submit-button");
+    const status = document.querySelector("#status");
+    const result = document.querySelector("#result");
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[character]);
+    }
+
+    function formatDate(value) {
+      return new Intl.DateTimeFormat("en", {
+        weekday: "short",
+        month: "short",
+        day: "numeric"
+      }).format(new Date(`${value}T12:00:00`));
+    }
+
+    function renderWeather(data) {
+      const current = data.current;
+
+      const forecastCards = data.forecast.map((day) => `
+        <article class="day">
+          <strong>${escapeHtml(formatDate(day.date))}</strong>
+          <p>${escapeHtml(day.condition)}</p>
+          <p>
+            ${escapeHtml(day.minimumTemperature)}°C -
+            ${escapeHtml(day.maximumTemperature)}°C
+          </p>
+          <p>Rain: ${escapeHtml(day.precipitationChance)}%</p>
+        </article>
+      `).join("");
+
+      result.innerHTML = `
+        <article class="current">
+          <h2>${escapeHtml(data.location.name)}</h2>
+          <p>${escapeHtml(data.message)}</p>
+
+          <div class="current-grid">
+            <p>
+              <span class="label">Temperature</span><br>
+              <span class="value">
+                ${escapeHtml(current.temperature)}°C
+              </span>
+            </p>
+
+            <p>
+              <span class="label">Feels like</span><br>
+              <span class="value">
+                ${escapeHtml(current.apparentTemperature)}°C
+              </span>
+            </p>
+
+            <p>
+              <span class="label">Humidity</span><br>
+              <span class="value">
+                ${escapeHtml(current.humidity)}%
+              </span>
+            </p>
+
+            <p>
+              <span class="label">Wind</span><br>
+              <span class="value">
+                ${escapeHtml(current.windSpeed)} km/h
+              </span>
+            </p>
+          </div>
+        </article>
+
+        <div class="forecast">${forecastCards}</div>
+      `;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const city = cityInput.value.trim();
+      if (!city) return;
+
+      status.className = "";
+      status.textContent = "Checking the weather...";
+      result.innerHTML = "";
+      button.disabled = true;
+
+      try {
+        const response = await fetch(
+          `/api/weather?city=${encodeURIComponent(city)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Weather request failed.");
+        }
+
+        status.textContent = "";
+        renderWeather(data);
+      } catch (error) {
+        status.className = "error";
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    form.requestSubmit();
+  </script>
+</body>
+</html>
