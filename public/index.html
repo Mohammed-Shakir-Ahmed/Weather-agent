@@ -25,21 +25,48 @@
       place-items: center;
       padding: 24px;
       background:
-        linear-gradient(135deg, #172554, #075985, #0f766e);
+        radial-gradient(circle at top, #1d4ed8 0%, #0f172a 45%, #020617 100%);
     }
 
     main {
-      width: min(720px, 100%);
+      width: min(760px, 100%);
       padding: 28px;
-      border: 1px solid rgb(255 255 255 / 20%);
+      border: 1px solid rgb(255 255 255 / 16%);
       border-radius: 24px;
-      background: rgb(15 23 42 / 80%);
-      box-shadow: 0 24px 70px rgb(0 0 0 / 30%);
-      backdrop-filter: blur(15px);
+      background: rgb(15 23 42 / 84%);
+      box-shadow: 0 24px 70px rgb(0 0 0 / 28%);
+      backdrop-filter: blur(16px);
+    }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
     }
 
     h1 {
-      margin-top: 0;
+      margin: 0;
+      font-size: 1.7rem;
+      letter-spacing: -0.02em;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgb(14 165 233 / 18%);
+      color: #bae6fd;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .intro {
+      color: #cbd5e1;
+      margin: 0 0 18px;
+      line-height: 1.6;
     }
 
     form {
@@ -59,13 +86,16 @@
       flex: 1;
       min-width: 0;
       padding: 0 16px;
+      background: rgb(248 250 252 / 96%);
+      color: #0f172a;
     }
 
     button {
       padding: 0 20px;
       color: white;
-      background: #0284c7;
+      background: linear-gradient(135deg, #0284c7, #0ea5e9);
       cursor: pointer;
+      box-shadow: 0 10px 25px rgb(2 132 199 / 28%);
     }
 
     button:disabled {
@@ -76,23 +106,49 @@
     #status {
       min-height: 24px;
       margin: 18px 0;
+      color: #bae6fd;
     }
 
+    .summary-card,
     .current,
-    .day {
+    .day,
+    .advice-card {
       padding: 18px;
       border-radius: 16px;
-      background: rgb(255 255 255 / 10%);
+      background: linear-gradient(135deg, rgb(255 255 255 / 12%), rgb(255 255 255 / 6%));
+      border: 1px solid rgb(255 255 255 / 10%);
+    }
+
+    .summary-card {
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, rgb(2 132 199 / 24%), rgb(255 255 255 / 8%));
+    }
+
+    .summary-title {
+      margin: 0 0 8px;
+      color: #bae6fd;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+    }
+
+    .summary-text {
+      margin: 0;
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: #f8fafc;
     }
 
     .current-grid,
-    .forecast {
+    .forecast,
+    .advice-grid {
       display: grid;
       gap: 12px;
     }
 
     .current-grid {
       grid-template-columns: repeat(2, 1fr);
+      margin-top: 16px;
     }
 
     .forecast {
@@ -100,13 +156,35 @@
       margin-top: 16px;
     }
 
-    .value {
-      font-size: 1.4rem;
-      font-weight: 700;
+    .advice-grid {
+      grid-template-columns: repeat(3, 1fr);
+      margin-top: 16px;
     }
 
-    .label {
+    .card-label {
+      display: block;
       color: #bae6fd;
+      font-size: 0.82rem;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .location-name {
+      margin: 0 0 8px;
+      font-size: 1.4rem;
+    }
+
+    .muted {
+      color: #cbd5e1;
+      margin: 0 0 8px;
+      line-height: 1.6;
     }
 
     .error {
@@ -119,7 +197,8 @@
       }
 
       .current-grid,
-      .forecast {
+      .forecast,
+      .advice-grid {
         grid-template-columns: 1fr;
       }
     }
@@ -128,8 +207,11 @@
 
 <body>
   <main>
-    <h1>Weather Agent</h1>
-    <p>Enter a city to get current weather and a three-day forecast.</p>
+    <div class="hero">
+      <h1>Weather Agent</h1>
+      <span class="pill">Daily guide</span>
+    </div>
+    <p class="intro">Enter a city to get a polished weather summary, smart daily advice, and a simple three-day outlook.</p>
 
     <form id="weather-form">
       <input
@@ -175,6 +257,13 @@
     function renderWeather(data) {
       const current = data.current;
 
+      const adviceCards = (data.advice || []).map((item) => `
+        <article class="advice-card">
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.advice)}</p>
+        </article>
+      `).join("");
+
       const forecastCards = data.forecast.map((day) => `
         <article class="day">
           <strong>${escapeHtml(formatDate(day.date))}</strong>
@@ -188,34 +277,39 @@
       `).join("");
 
       result.innerHTML = `
+        <article class="summary-card">
+          <p class="summary-title">Today at a glance</p>
+          <p class="summary-text">${escapeHtml(data.summary)}</p>
+        </article>
+
         <article class="current">
-          <h2>${escapeHtml(data.location.name)}</h2>
-          <p>${escapeHtml(data.message)}</p>
+          <h2 class="location-name">${escapeHtml(data.location.name)}</h2>
+          <p class="muted">${escapeHtml(data.message)}</p>
 
           <div class="current-grid">
             <p>
-              <span class="label">Temperature</span><br>
+              <span class="card-label">Temperature</span>
               <span class="value">
                 ${escapeHtml(current.temperature)}°C
               </span>
             </p>
 
             <p>
-              <span class="label">Feels like</span><br>
+              <span class="card-label">Feels like</span>
               <span class="value">
                 ${escapeHtml(current.apparentTemperature)}°C
               </span>
             </p>
 
             <p>
-              <span class="label">Humidity</span><br>
+              <span class="card-label">Humidity</span>
               <span class="value">
                 ${escapeHtml(current.humidity)}%
               </span>
             </p>
 
             <p>
-              <span class="label">Wind</span><br>
+              <span class="card-label">Wind</span>
               <span class="value">
                 ${escapeHtml(current.windSpeed)} km/h
               </span>
@@ -223,6 +317,7 @@
           </div>
         </article>
 
+        <div class="advice-grid">${adviceCards}</div>
         <div class="forecast">${forecastCards}</div>
       `;
     }
